@@ -65,3 +65,36 @@ options:
 
 ## Performance note
 While the scripts runs without strict GPU requirement, using a GPU can significantly speed up the simulation process, especially when the number of nodes and slots per frame is large.
+## Count-conditioned beliefs and online load calibration (`oracle_study/`)
+
+Extension of GO-IRSA with (i) a belief update conditioned on the number of undecoded
+transmitters, estimated from the residual power after SIC, and (ii) an online
+calibration of the load target. Report: `oracle_study/report/report.tex`.
+
+```bash
+uv venv .venv --python 3.12
+uv pip install --python .venv numpy scipy numba matplotlib pandas pyarrow zipfile-deflate64
+uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cu121
+
+# Wiener model (paper scenario): conservative vs estimated, with / without calibration
+.venv/bin/python -m oracle_study.run_gpu --episodes 50 --eta 1.0 0.95
+.venv/bin/python -m oracle_study.run_gpu --episodes 50 --eta 1.0 0.95 --calib_gain 0.3 --tag _calib --no_pull
+
+# Real data: Low Carbon London smart meters (one sample = one frame, AR(1) per household)
+.venv/bin/python -m oracle_study.realdata.prepare     # needs data/lcl/LCL-FullData.zip (London Datastore)
+.venv/bin/python -m oracle_study.realdata.fit
+.venv/bin/python -m oracle_study.realdata.run_real --episodes 50 --G 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 1.1 1.2
+.venv/bin/python -m oracle_study.realdata.run_real --episodes 50 --G 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 1.1 1.2 \
+    --calib_gain 0.3 --no_pull --out oracle_study/results/real_hold_episodes_calib.csv
+
+# Report figures / tables
+CUDA_VISIBLE_DEVICES=1 .venv/bin/python -m oracle_study.report.trace_calib
+.venv/bin/python -m oracle_study.report.make_figures
+```
+
+| File | Content |
+|---|---|
+| `oracle_study/sim.py` | config, IRSA frame with SIC, residual-power estimator of K_u, pull baseline |
+| `oracle_study/sim_gpu.py` | batched GPU simulator, Wiener model |
+| `oracle_study/realdata/` | data preparation, AR(1) fit, real-data simulator and sweep |
+| `oracle_study/report/` | LaTeX report, figure / table generation |
